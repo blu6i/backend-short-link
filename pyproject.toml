@@ -1,0 +1,80 @@
+[project]
+name = "ShortUrl"
+version = "0.1.0"
+description = "Сервис для сокращения ссылок и ведения статистики посещения"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "alembic>=1.19.1",
+    "asyncpg>=0.30.0",
+    "fastapi>=0.141.1",
+    "loguru>=0.7.3",
+    "pybase62>=1.0.0",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.15.0",
+    "pyjwt>=2.13.0",
+    "redis>=8.1.0",
+    "sqlalchemy>=2.0.52",
+    "uvicorn>=0.52.4",
+]
+
+[dependency-groups]
+dev = [
+    "aiosqlite>=0.22.1",
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.3",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 90
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "alembic",
+    "docs",
+    "migrations"
+]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "UP",
+    "FURB",
+    "C4",
+    "FAST001",
+    "FAST002",
+    "FAST003",
+    "DTZ",
+    "T20",
+    "ASYNC",
+    "D"
+]
+ignore = [
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    "D203",
+    "D212",
+]
+fixable = [
+    "I",
+]
+ 
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+addopts = "-v"

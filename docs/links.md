@@ -1,0 +1,1 @@
+* 📖 **[Документация Ruff](https://docs.astral.sh/ruff/)**
