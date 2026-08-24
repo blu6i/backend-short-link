@@ -10,17 +10,20 @@
 """
 
 from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src import api
+from src.api.v1.url import router as url_router
 from src.core.database import async_db
 from src.core.exceptions import AppException
 from src.core.logger import logger
-from src.core.rd import async_redis
+from src.core.rd import async_redis, url_redis
 from src.core.settings import settings
+from src.repositories.url import url_repo
 
 
 # Инициализация БД и Redis при запуске приложения
@@ -38,11 +41,15 @@ async def lifespan(app: FastAPI):
         logger.info("✅ БД подключена успешно")
 
     # Инициализация Redis
-    await async_redis.init_pool()
     try:
-        async with async_redis.connection() as r:
-            await r.ping()
-        logger.info("✅ Redis подключен успешно")
+        await async_redis.init_pool()
+        async with async_redis.connection() as redis_client:
+            await redis_client.ping()
+        logger.info("✅ базовый Redis подключен успешно")
+        await url_redis.init_pool()
+        async with url_redis.connection() as redis_client:
+            await redis_client.ping()
+        logger.info("✅ Redis для ссылок подключен успешно")
     except Exception as e:  # noqa: BLE001
         logger.error(f"❌ Ошибка подключения к Redis: {e}")
 
@@ -87,8 +94,23 @@ async def app_exception_handler(request: Request, exc: AppException):
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Обработчик исключений Exception.
+
+    Возвращает стандартизированный JSON-ответ с соответствующим HTTP-статусом.
+    """
+    logger.exception(f"Критическая ошибка: {exc}")
+
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Внутренняя ошибка сервера. Мы уже работаем над этим."},
+    )
+
+
 # Подключение маршрутов
-app.include_router(api.router)
+app.include_router(url_router, prefix="/api")
 
 
 # Хелс-чек
@@ -108,22 +130,42 @@ async def health_check():
 
 
 # Корневая схема
-@app.get("/", tags=["Info"])
-async def root():
-    """
-    Информация об API.
+# @app.get("/", tags=["Info"])
+# async def root():
+#     """
+#     Информация об API.
 
-    - Документация: `/docs` (Swagger UI)
-    - ReDoc: `/redoc`
-    - Health Check: `/health`
-    """
-    return {
-        "name": "ShortUrl API",
-        "version": "1.0.0",
-        "description": "API для сокращений ссылок и статистики переходов",
-        "docs": "/docs",
-        "health": "/health",
-    }
+#     - Документация: `/docs` (Swagger UI)
+#     - ReDoc: `/redoc`
+#     - Health Check: `/health`
+#     """
+#     return {
+#         "name": "ShortUrl API",
+#         "version": "1.0.0",
+#         "description": "API для сокращений ссылок и статистики переходов",
+#         "docs": "/docs",
+#         "health": "/health",
+#     }
+
+
+@app.get("/{short_url}")
+async def redirect(
+    session: Annotated[AsyncSession, Depends(async_db.get_session)], short_url: str
+):
+    """Редирект на оригининальную ссылку."""
+    # original_url = await url_repo.get_full_url(session, short_url)
+    original_url = await url_redis.get(short_url)
+    if not original_url:
+        original_url = await url_repo.get_full_url(session, short_url)
+        if not original_url:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Оригинальная ссылка не найдена",
+            )
+        await url_redis.set(key=short_url, value=original_url, ex=60 * 60 * 24)
+    return RedirectResponse(
+        str(original_url), status_code=status.HTTP_307_TEMPORARY_REDIRECT
+    )
 
 
 if __name__ == "__main__":

@@ -10,21 +10,34 @@ from src.core.settings import settings
 class RedisDatabase:
     """Управляет пулом соединений и операциями с Redis."""
 
-    def __init__(self, prefix=""):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        db: int,
+        password: str | None = None,
+        prefix: str = "",
+        flag_nx: bool = False,
+    ):
         """
         Инициализирует параметры подключения к Redis.
 
         Args:
-            prefix: Префикс, добавляемый ко всем ключам.
-
+            host (str): IP хостинга,
+            port (str): порт,
+            db (int): номер БД,
+            password (str): пароль. default=None
+            prefix (str): Префикс, добавляемый ко всем ключам.
+            flag_nx (bool): Флаг для Set if Not eXists. default=False
         """
-        self.host = settings.redis.redis_host
-        self.port = settings.redis.redis_port
-        self.password = settings.redis.redis_password
-        self.db = settings.redis.redis_db
+        self.host = host
+        self.port = port
+        self.password = password
+        self.db = db
         self._pool = None
         self._client = None
         self.prefix = prefix
+        self.flag_nx = flag_nx
 
     async def init_pool(self, max_connections=10):
         """Initialize the connection pool."""
@@ -78,7 +91,8 @@ class RedisDatabase:
 
         """
         async with self.connection() as r:
-            return await r.set(self._full_key(key), value, ex=ex)
+            result = await r.set(self._full_key(key), value, ex=ex, nx=self.flag_nx)
+            return bool(result)
 
     async def get(self, key):
         """
@@ -128,4 +142,18 @@ class RedisDatabase:
             return await r.keys(self._full_key(pattern))
 
 
-async_redis = RedisDatabase()
+async_redis = RedisDatabase(
+    host=settings.redis.redis_host,
+    port=settings.redis.redis_port,
+    db=settings.redis.redis_db,
+    password=settings.redis.redis_password,
+)
+
+url_redis = RedisDatabase(
+    host=settings.redis.redis_host,
+    port=settings.redis.redis_port,
+    db=settings.redis.redis_db,
+    password=settings.redis.redis_password,
+    prefix="url",
+    flag_nx=True,
+)
