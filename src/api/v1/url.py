@@ -8,13 +8,15 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import async_db
-from src.core.exceptions import AlreadyExistsException, NotFoundException
+from src.core.exceptions import AlreadyExistsException
 from src.core.rd import RedisDatabase, get_async_redis
 from src.repositories.url import url_repo
 from src.schemas.general import PaginationParams
+from src.schemas.statistics import StatisticsScale, UrlStatisticsSchema
 from src.schemas.url import PaginationUrlSchema, UrlCreateSchem, UrlReadSchema
 from src.schemas.user import UserReadSchem
-from src.services.auth import check_access_user
+from src.services.auth import check_access_user, check_token
+from src.services.statistics import statistics_service
 from src.utils.hashed import hashed_url
 
 router = APIRouter(prefix="/urls", tags=["url"])
@@ -23,6 +25,7 @@ async_session_db = Annotated[AsyncSession, Depends(async_db.get_session)]
 async_session_rd = Annotated[RedisDatabase, Depends(get_async_redis)]
 pagination_query = Annotated[PaginationParams, Query()]
 user_auth = Annotated[UserReadSchem, Depends(check_access_user)]
+user_read_access = Annotated[UserReadSchem, Depends(check_token)]
 
 COUNT_TRY_SAVE = 5
 
@@ -40,7 +43,8 @@ async def create_short_url(
         session_db (AsyncSession): Сессия ДБ
         session_rd (RedisDatabase): Сессия редис
         original_url (str): Оригинальная ссылка
-        user_id (int | None, optional): ИД пользователя, если создается для пользователя. Defaults to None.
+        user_id (int | None, optional): ИД пользователя, если создается для
+            пользователя. Defaults to None.
 
     Raises:
         HTTPException: _description_
@@ -136,9 +140,10 @@ async def get_user_url(
     return result
 
 
-@router.get("/{short_url}", response_model=UrlReadSchema)
+@router.get("/{short_url}", response_model=UrlStatisticsSchema)
 async def get_url(
     session: async_session_db,
+    user_data: user_read_access,
     short_url: Annotated[
         str,
         Path(
@@ -147,14 +152,12 @@ async def get_url(
             examples=["aB9xYz", "00a1Z9"],
         ),
     ],
+    scale: Annotated[StatisticsScale, Query(...)],
 ):
-    """Получение информации и статистики об оригинальной ссылки."""
-    "TODO: Добавить вывод статистики"
-    try:
-        url_data = await url_repo.get_url(session, short_url)
-        return url_data
-    except NotFoundException as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
+    """Получение агрегированной статистики переходов по ссылке."""
+    return await statistics_service.get_url_statistics(
+        session, short_url, user_data.id, scale
+    )
 
 
 @router.delete("/{short_url}", status_code=status.HTTP_204_NO_CONTENT)
@@ -167,8 +170,3 @@ async def delete_user_url(
     """Удаление пользовательской ссылки."""
     await url_repo.delete(session_db, short_url, user_data.id)
     await session_rd.delete(short_url)
-
-
-if __name__ == "__main__":
-    s = 12 or "A"
-    print(str(s))

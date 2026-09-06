@@ -146,11 +146,11 @@ async def test_database_error_is_logged_separately(client: AsyncClient, monkeypa
 
 @pytest.mark.asyncio
 async def test_invalid_get_url(client: AsyncClient, db_session: AsyncSession):
-    response = await client.get(f"/api/urls/KSjdsa")
-    assert response.status_code == 404
+    response = await client.get("/api/urls/KSjdsa?scale=day")
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_invalid_get_url_more(client: AsyncClient, db_session: AsyncSession):
     response = await client.get(f"/api/urls/KSjdsadsa")
-    assert response.status_code == 422
+    assert response.status_code == 401

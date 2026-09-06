@@ -3,7 +3,6 @@
 import hashlib
 from hashlib import md5
 
-import bcrypt
 from base62 import encodebytes
 
 from src.core.logger import log
@@ -25,7 +24,6 @@ def hashed_url(original_url: str, salt: str = "", user_id: str = "") -> str:
         str: Хэшированная ссылка длиной 6.
 
     """
-    # TODO: вместо генерации датавремя и соли приписывать ИД пользователя, если он есть
     data = (original_url + salt + user_id).encode()
     url_md5 = md5(data).digest()
     url_base62 = encodebytes(url_md5)

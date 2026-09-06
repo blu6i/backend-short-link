@@ -1,67 +1,76 @@
-# Схема Базы Данных (ER-диаграмма)
+# Схема базы данных
 
 ```mermaid
 erDiagram
     USERS {
         int id PK
-        varchar(LEN) username UK "NOT NULL"
-        varchar(LEN) email UK "NOT NULL"
-        varchar(LEN) hashed_password "NOT NULL"
-        datetime created_at
-        boolean is_active "NOT NULL DEFAULT: TRUE"
+        varchar username UK "NOT NULL, max 32"
+        varchar email UK "NOT NULL, max 255"
+        varchar hashed_password "NOT NULL, max 255"
+        datetime created_at "NOT NULL"
+        boolean is_active "NOT NULL"
     }
 
     URLS {
         int id PK
-        int user_id FK "NOT NULL UK1"
-        varchar(LEN) original_url "NOT NULL UK1"
-        varchar(LEN) short_url UK "NOT NULL"
-        boolean is_active "NOT NULL DEFAULT: TRUE"
-        datetime created_at "NOT NULL DEFAULT: NOW()"
+        int user_id FK "NULL для гостевых ссылок"
+        varchar original_url "NOT NULL, max 4096"
+        varchar short_url "NOT NULL, max 6"
+        datetime created_at "NOT NULL"
+        boolean is_active "NOT NULL"
     }
-    
-    VISITS {
+
+    STATISTIC_URLS {
         int id PK
         int url_id FK
-        datetime clicked_at "NOT NULL DEFAULT: NOW()"
-        varchar(LEN) hashed_ip "NOT NULL"
+        datetime clicked_at "NOT NULL"
+        varchar hashed_ip "NOT NULL, max 255"
+        varchar user_agent "NOT NULL, max 255"
+        varchar country "NULL, max 255"
+        varchar city "NULL, max 255"
     }
 
-    USERS ||--o{ URLS : "создает"
-    URLS ||--o{ VISITS : "имеет"
+    USERS ||--o{ URLS : creates
+    URLS ||--o{ STATISTIC_URLS : receives
 ```
 
-## Описание таблиц
+## `users`
 
-### Таблица `USERS` (Пользователи)
+- `id` — первичный ключ.
+- `username` — уникальное имя пользователя, максимум 32 символа.
+- `email` — уникальный email, максимум 255 символов.
+- `hashed_password` — bcrypt-хэш пароля, максимум 255 символов.
+- `created_at` — дата регистрации.
+- `is_active` — флаг активности пользователя.
 
-Хранит информацию о зарегистрированных пользователях системы.
+## `urls`
 
-- `id` — уникальный идентификатор пользователя (Primary Key).
-- `username` — имя пользователя (уникальное). **Макс. длина строки: 16**
-- `email` — электронная почта (уникальная). **Макс. длина строки: 255**
-- `hashed_password` — хэш пароля. **Макс. длина строки: 60**
-- `created_at` — дата и время регистрации пользователя.
-- `is_active` — статус аккаунта (используется для блокировки/мягкого удаления).
+- `id` — первичный ключ.
+- `user_id` — внешний ключ на `users.id`, может быть `NULL` для гостевых ссылок.
+- `original_url` — исходный URL, максимум 4096 символов.
+- `short_url` — короткий Base62-ключ длиной 6 символов.
+- `created_at` — дата создания.
+- `is_active` — флаг мягкого удаления.
+- `(user_id, original_url)` — уникальное ограничение для ссылок пользователя.
 
-### Таблица `URLS` (Ссылки)
+Гостевые ссылки не записываются в PostgreSQL и живут в Redis 24 часа. Пользовательские ссылки сохраняются в PostgreSQL и кэшируются в Redis.
 
-Хранит созданные пользователями короткие ссылки.
+## `statistic_urls`
 
-- `id` — уникальный идентификатор записи (Primary Key).
-- `user_id` — ID владельца ссылки (Foreign Key).
-- `original_url` — исходный длинный URL-адрес. **Макс. длина строки: 4096**
-- `short_url` — сгенерированный уникальный токен (короткий ID). **Макс. длина строки: 6**
-- `is_active` — флаг мягкого удаления. Если `False`, ссылка недоступна (возвращает 404/410).
-- `created_at` — дата и время сокращения ссылки.
+- `id` — первичный ключ.
+- `url_id` — внешний ключ на `urls.id`, удаляется каскадно.
+- `clicked_at` — время перехода.
+- `hashed_ip` — SHA-256 хэш IP с солью, исходный IP не сохраняется.
+- `user_agent` — User-Agent клиента.
+- `country`, `city` — данные geo API, могут быть `NULL`.
 
-> **Важно (`UK1`)**: Комбинация полей `(user_id, original_url)` имеет уникальное ограничение `UniqueConstraint`, чтобы запретить дублирование ссылок у одного и того же пользователя.
+Статистика создаётся Celery worker после redirect. Запрос к внешнему geo API ограничен Celery rate limit `3/s` на worker.
 
-### Таблица `VISITS` (Статистика переходов)
+## Redis
 
-Собирает аналитику по каждому клику на короткие ссылки авторизованных пользователей.
+Redis не является частью ERD. Он используется для:
 
-- `id` — уникальный идентификатор перехода (Primary Key).
-- `url_id` — ID ссылки, по которой перешли (Foreign Key).
-- `clicked_at` — точное дата и время клика.
-- `hashed_ip` — хэшированный или анонимизированный IP-адрес посетителя. **Макс. длина строки: [указать длину]**
+- хранения гостевых коротких ссылок;
+- кэширования пользовательских ссылок;
+- блокировок email и username при регистрации;
+- брокера Celery в отдельной Redis database.

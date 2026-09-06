@@ -156,16 +156,18 @@ async def refresh_token(user_data: user_read_refresh, response: Response):
         key="accessToken",
         value=access_token,
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=settings.auth.cookie_samesite,
+        secure=settings.auth.cookie_secure,
+        domain=settings.auth.cookie_domain,
         max_age=60 * 5,
     )
     response.set_cookie(
         key="refreshToken",
         value=refresh_token,
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=settings.auth.cookie_samesite,
+        secure=settings.auth.cookie_secure,
+        domain=settings.auth.cookie_domain,
         max_age=60 * 60 * 24 * 7,
     )
 
