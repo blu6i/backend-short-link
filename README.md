@@ -118,7 +118,6 @@ uv run ruff check .
 
 - [API](docs/API.md)
 - [ERD](docs/ERD.md)
-- [Roadmap](docs/roadmap.md)
 - [Пример переменных окружения](.env.example)
 
 ## Стек
