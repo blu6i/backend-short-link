@@ -25,6 +25,7 @@ from src.core.logger import logger
 from src.core.rd import async_redis
 from src.core.settings import settings
 from src.repositories.url import url_repo
+from src.tasks.statistics import process_click_task
 
 
 # Инициализация БД и Redis при запуске приложения
@@ -148,7 +149,9 @@ async def health_check():
 
 @app.get("/{short_url}")
 async def redirect(
-    session: Annotated[AsyncSession, Depends(async_db.get_session)], short_url: str
+    request: Request,
+    session: Annotated[AsyncSession, Depends(async_db.get_session)],
+    short_url: str,
 ):
     """Редирект на оригининальную ссылку."""
     # original_url = await url_repo.get_full_url(session, short_url)
@@ -161,6 +164,11 @@ async def redirect(
                 detail="Оригинальная ссылка не найдена",
             )
         await async_redis.set(key=short_url, value=original_url, ex=60 * 60 * 24, nx=True)
+    user_agent = request.headers.get("user-agent", "Unknown")
+    client_ip = request.headers.get("x-real-ip") or (
+        request.client.host if request.client else "127.0.0.1"
+    )
+    process_click_task.delay(short_url=short_url, ip=client_ip, user_agent=user_agent)
     return RedirectResponse(
         str(original_url), status_code=status.HTTP_307_TEMPORARY_REDIRECT
     )

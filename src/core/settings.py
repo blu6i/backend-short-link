@@ -1,5 +1,7 @@
 """Настройки для проекта."""
 
+from typing import Literal
+
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -19,6 +21,14 @@ class JWTToken(BaseModel):
     def get_token(self):
         """Получение токена."""
         return self.token
+
+
+class AuthSettings(BaseModel):
+    """Настройки cookies авторизации."""
+
+    cookie_secure: bool = False
+    cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    cookie_domain: str | None = None
 
 
 class LogSettings(BaseModel):
@@ -43,12 +53,20 @@ class LogSettings(BaseModel):
     )
 
 
+class HashedSaltSettings(BaseModel):
+    """Соль для хэширования."""
+
+    hashed_ip_salt: str
+
+
 class RedisSettings(BaseModel):
     """Настройки для Redis."""
 
     redis_host: str
     redis_port: int
     redis_db: int = 0
+    redis_db_broker: int = 1
+    redis_db_backend: int = 2
     redis_password: str | None = None
 
     @property
@@ -56,6 +74,12 @@ class RedisSettings(BaseModel):
         """Ссылка для подключения к Redis."""
         password = f":{self.redis_password}@" if self.redis_password else ""
         return f"redis://{password}{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+    @property
+    def get_url_broker(self):
+        """Ссылка для подключения к Redis брокера."""
+        password = f":{self.redis_password}@" if self.redis_password else ""
+        return f"redis://{password}{self.redis_host}:{self.redis_port}/{self.redis_db_broker}"
 
 
 class DBSettings(BaseModel):
@@ -80,9 +104,14 @@ class DBSettings(BaseModel):
     }
 
     @property
-    def get_db(self):
-        """Ссылка для подключения к БД."""
+    def get_async_db(self):
+        """Ссылка для асинхронного подключения к БД."""
         return f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+
+    @property
+    def get_sync_db(self):
+        """Ссылка для синхронного подключения к БД."""
+        return f"postgresql+psycopg2://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
 
 class Cors(BaseModel):
@@ -112,6 +141,12 @@ class Url(BaseModel):
         return self.url
 
 
+class ApiTokens(BaseModel):
+    """Токены к внешним АПИ."""
+
+    ip_checked: str
+
+
 class Settings(BaseSettings):
     """Все настройки."""
 
@@ -124,8 +159,11 @@ class Settings(BaseSettings):
     log: LogSettings
     redis: RedisSettings
     jwt: JWTToken
+    auth: AuthSettings = AuthSettings()
     cors: Cors
     url: Url
+    salt: HashedSaltSettings
+    api_token: ApiTokens
 
 
 settings = Settings()  # type: ignore[call-arg]

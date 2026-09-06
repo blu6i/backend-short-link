@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import async_db
 from src.core.exceptions import AlreadyExistsException, NotFoundException
 from src.core.rd import RedisDatabase, get_async_redis
+from src.core.settings import settings
 from src.repositories.user import user_repo
 from src.schemas.user import UserCreateSchem, UserLoginShem, UserReadSchem
 from src.services.auth import (
@@ -67,16 +68,18 @@ async def register_user(
         key="accessToken",
         value=access_token,
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=settings.auth.cookie_samesite,
+        secure=settings.auth.cookie_secure,
+        domain=settings.auth.cookie_domain,
         max_age=60 * 5,
     )
     response.set_cookie(
         key="refreshToken",
         value=refresh_token,
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=settings.auth.cookie_samesite,
+        secure=settings.auth.cookie_secure,
+        domain=settings.auth.cookie_domain,
         max_age=60 * 60 * 24 * 7,
     )
     return user
@@ -113,16 +116,18 @@ async def login_user(
         key="accessToken",
         value=access_token,
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=settings.auth.cookie_samesite,
+        secure=settings.auth.cookie_secure,
+        domain=settings.auth.cookie_domain,
         max_age=60 * 5,
     )
     response.set_cookie(
         key="refreshToken",
         value=refresh_token,
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=settings.auth.cookie_samesite,
+        secure=settings.auth.cookie_secure,
+        domain=settings.auth.cookie_domain,
         max_age=60 * 60 * 24 * 7,
     )
     return user
@@ -179,12 +184,14 @@ async def unlogin_user(user_data: user_read_access, response: Response):
     response.delete_cookie(
         key="accessToken",
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=settings.auth.cookie_samesite,
+        secure=settings.auth.cookie_secure,
+        domain=settings.auth.cookie_domain,
     )
     response.delete_cookie(
         key="refreshToken",
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=settings.auth.cookie_samesite,
+        secure=settings.auth.cookie_secure,
+        domain=settings.auth.cookie_domain,
     )

@@ -2,13 +2,14 @@
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models.base import Base
 from src.models.mixins import ActiveMixin, CreatedAtMixin, PKInt
 
 if TYPE_CHECKING:
+    from src.models.statistic_url import StatisticUrlBase
     from src.models.user import UserBase
 
 
@@ -25,3 +26,8 @@ class UrlBase(PKInt, CreatedAtMixin, ActiveMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     user: Mapped[UserBase] = relationship(back_populates="links")
+
+    statistics: Mapped[list[StatisticUrlBase]] = relationship(
+        back_populates="link",
+        cascade="all, delete-orphan",
+    )

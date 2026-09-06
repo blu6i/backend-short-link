@@ -75,7 +75,7 @@ class DataBase:
 
 
 async_db = DataBase(
-    url=settings.db.get_db,
+    url=settings.db.get_async_db,
     echo=settings.db.echo,
     echo_pool=settings.db.echo_pool,
     max_overflow=settings.db.max_overflow,

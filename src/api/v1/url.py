@@ -15,7 +15,7 @@ from src.schemas.general import PaginationParams
 from src.schemas.url import PaginationUrlSchema, UrlCreateSchem, UrlReadSchema
 from src.schemas.user import UserReadSchem
 from src.services.auth import check_access_user
-from src.utils.hashed_url import hashed_url
+from src.utils.hashed import hashed_url
 
 router = APIRouter(prefix="/urls", tags=["url"])
 
