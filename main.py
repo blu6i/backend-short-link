@@ -18,10 +18,11 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.url import router as url_router
+from src.api.v1.user import router as user_router
 from src.core.database import async_db
 from src.core.exceptions import AppException
 from src.core.logger import logger
-from src.core.rd import async_redis, url_redis
+from src.core.rd import async_redis
 from src.core.settings import settings
 from src.repositories.url import url_repo
 
@@ -46,10 +47,6 @@ async def lifespan(app: FastAPI):
         async with async_redis.connection() as redis_client:
             await redis_client.ping()
         logger.info("✅ базовый Redis подключен успешно")
-        await url_redis.init_pool()
-        async with url_redis.connection() as redis_client:
-            await redis_client.ping()
-        logger.info("✅ Redis для ссылок подключен успешно")
     except Exception as e:  # noqa: BLE001
         logger.error(f"❌ Ошибка подключения к Redis: {e}")
 
@@ -111,6 +108,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Подключение маршрутов
 app.include_router(url_router, prefix="/api")
+app.include_router(user_router, prefix="/api")
 
 
 # Хелс-чек
@@ -154,7 +152,7 @@ async def redirect(
 ):
     """Редирект на оригининальную ссылку."""
     # original_url = await url_repo.get_full_url(session, short_url)
-    original_url = await url_redis.get(short_url)
+    original_url = await async_redis.get(short_url)
     if not original_url:
         original_url = await url_repo.get_full_url(session, short_url)
         if not original_url:
@@ -162,7 +160,7 @@ async def redirect(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Оригинальная ссылка не найдена",
             )
-        await url_redis.set(key=short_url, value=original_url, ex=60 * 60 * 24)
+        await async_redis.set(key=short_url, value=original_url, ex=60 * 60 * 24, nx=True)
     return RedirectResponse(
         str(original_url), status_code=status.HTTP_307_TEMPORARY_REDIRECT
     )

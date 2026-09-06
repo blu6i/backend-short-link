@@ -17,7 +17,6 @@ class RedisDatabase:
         db: int,
         password: str | None = None,
         prefix: str = "",
-        flag_nx: bool = False,
     ):
         """
         Инициализирует параметры подключения к Redis.
@@ -29,6 +28,7 @@ class RedisDatabase:
             password (str): пароль. default=None
             prefix (str): Префикс, добавляемый ко всем ключам.
             flag_nx (bool): Флаг для Set if Not eXists. default=False
+
         """
         self.host = host
         self.port = port
@@ -37,7 +37,6 @@ class RedisDatabase:
         self._pool = None
         self._client = None
         self.prefix = prefix
-        self.flag_nx = flag_nx
 
     async def init_pool(self, max_connections=10):
         """Initialize the connection pool."""
@@ -80,7 +79,7 @@ class RedisDatabase:
             return f"{self.prefix}:{key}"
         return key
 
-    async def set(self, key: str, value, ex: int = 300) -> bool:
+    async def set(self, key: str, value, ex: int = 300, nx: bool = False) -> bool:
         """
         Асинхронно сохраняет значение ключа с ограниченным сроком жизни.
 
@@ -91,15 +90,15 @@ class RedisDatabase:
 
         """
         async with self.connection() as r:
-            result = await r.set(self._full_key(key), value, ex=ex, nx=self.flag_nx)
+            result = await r.set(self._full_key(key), value, ex=ex, nx=nx)
             return bool(result)
 
-    async def get(self, key):
+    async def get(self, key: str):
         """
         Асинхронно получает значение по ключу.
 
         Args:
-            key: Ключ для поиска.
+            key (key): Ключ для поиска.
 
         """
         async with self.connection() as r:
@@ -149,11 +148,7 @@ async_redis = RedisDatabase(
     password=settings.redis.redis_password,
 )
 
-url_redis = RedisDatabase(
-    host=settings.redis.redis_host,
-    port=settings.redis.redis_port,
-    db=settings.redis.redis_db,
-    password=settings.redis.redis_password,
-    prefix="url",
-    flag_nx=True,
-)
+
+async def get_async_redis() -> RedisDatabase:
+    """Зависимость для инъекции базового Redis (кэш, блокировки)."""
+    return async_redis

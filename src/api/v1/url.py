@@ -1,41 +1,113 @@
 """Шаблон CRUD-роутера для ресурсов версии API v1."""
 
-from random import randint
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from loguru import logger
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import async_db
 from src.core.exceptions import AlreadyExistsException, NotFoundException
-from src.core.rd import url_redis
+from src.core.rd import RedisDatabase, get_async_redis
 from src.repositories.url import url_repo
 from src.schemas.general import PaginationParams
 from src.schemas.url import PaginationUrlSchema, UrlCreateSchem, UrlReadSchema
+from src.schemas.user import UserReadSchem
+from src.services.auth import check_access_user
 from src.utils.hashed_url import hashed_url
 
 router = APIRouter(prefix="/urls", tags=["url"])
 
-async_session = Annotated[AsyncSession, Depends(async_db.get_session)]
+async_session_db = Annotated[AsyncSession, Depends(async_db.get_session)]
+async_session_rd = Annotated[RedisDatabase, Depends(get_async_redis)]
+pagination_query = Annotated[PaginationParams, Query()]
+user_auth = Annotated[UserReadSchem, Depends(check_access_user)]
 
 COUNT_TRY_SAVE = 5
 
 
+async def create_short_url(
+    session_db: AsyncSession,
+    session_rd: RedisDatabase,
+    original_url: str,
+    user_id: int | None = None,
+):
+    """
+    Создание и сохранение ссылок.
+
+    Args:
+        session_db (AsyncSession): Сессия ДБ
+        session_rd (RedisDatabase): Сессия редис
+        original_url (str): Оригинальная ссылка
+        user_id (int | None, optional): ИД пользователя, если создается для пользователя. Defaults to None.
+
+    Raises:
+        HTTPException: _description_
+        AlreadyExistsException: _description_
+        HTTPException: _description_
+        HTTPException: _description_
+
+    """
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=UrlReadSchema)
-async def create_url(session: async_session, original_url: UrlCreateSchem):
+async def create_url(
+    session: async_session_db,
+    session_rd: async_session_rd,
+    original_url: UrlCreateSchem,
+    user: user_auth,
+):
     """Создание ссылки."""
-    try_save = 0
     url = str(original_url.original_url)
+    if user:
+        if await url_repo.exists_by_full_url_user(
+            session, user.id, str(original_url.original_url)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ссылка уже была сокращена",
+            )
+        try_save = 0
+        while try_save < COUNT_TRY_SAVE:
+            salt = f"salt_{try_save}"
+            short_url = hashed_url(url, salt, str(user.id))
+            try:
+                result = await session_rd.set(
+                    key=short_url, value=url, ex=60 * 60 * 24, nx=True
+                )
+                if not result:
+                    raise AlreadyExistsException()
+                try:
+                    url_base = await url_repo.create_url(session, url, short_url, user.id)
+                except SQLAlchemyError:
+                    logger.exception("Ошибка БД при сохранении короткой ссылки")
+                    raise
+                return url_base
+            except AlreadyExistsException as e:  # noqa: F841
+                try_save += 1
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Сервер исчерпал попытки создания уникальной ссылки",
+        )
+    short_url = hashed_url(url)
+    result = await session_rd.set(key=short_url, value=url, ex=60 * 60 * 24, nx=True)
+    if result:
+        return UrlReadSchema(original_url=url, short_url=short_url)
+    original_url_rd = await session_rd.get(key=short_url)
+    if original_url_rd == str(original_url.original_url):
+        return UrlReadSchema(original_url=url, short_url=short_url)
+    try_save = 0
     while try_save < COUNT_TRY_SAVE:
-        salt = f"salt_{randint(0, 999)}"
+        salt = f"salt_{try_save}"
         short_url = hashed_url(url, salt)
         try:
-            result = await url_redis.set(key=short_url, value=url, ex=60 * 60 * 24)
+            result = await session_rd.set(
+                key=short_url, value=url, ex=60 * 60 * 24, nx=True
+            )
             if not result:
                 raise AlreadyExistsException()
-            # TODO: сделать проверку на авторизацию пользователя
-            url_base = await url_repo.create_url(session, url, short_url)
-            return url_base
+            return UrlReadSchema(original_url=url, short_url=short_url)
         except AlreadyExistsException as e:  # noqa: F841
             try_save += 1
     raise HTTPException(
@@ -44,9 +116,29 @@ async def create_url(session: async_session, original_url: UrlCreateSchem):
     )
 
 
+@router.get("/", response_model=PaginationUrlSchema)
+async def get_all_url(session: async_session_db, pagination: pagination_query):
+    """Получение всех ссылок с пагинацией."""
+    result = await url_repo.get_paginated_url(
+        session, pagination.page, pagination.per_page
+    )
+    return result
+
+
+@router.get("/my", response_model=PaginationUrlSchema)
+async def get_user_url(
+    session: async_session_db, pagination: pagination_query, user_data: user_auth
+):
+    """Получение всех ссылок с пагинацией."""
+    result = await url_repo.get_paginated_user_url(
+        session, user_data.id, pagination.page, pagination.per_page
+    )
+    return result
+
+
 @router.get("/{short_url}", response_model=UrlReadSchema)
 async def get_url(
-    session: async_session,
+    session: async_session_db,
     short_url: Annotated[
         str,
         Path(
@@ -65,12 +157,18 @@ async def get_url(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.get("/", response_model=PaginationUrlSchema)
-async def get_all_url(
-    session: async_session, pagination: Annotated[PaginationParams, Query()]
+@router.delete("/{short_url}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user_url(
+    session_db: async_session_db,
+    session_rd: async_session_rd,
+    user_data: user_auth,
+    short_url: str,
 ):
-    """Получение всех ссылок с пагинацией."""
-    result = await url_repo.get_paginated_url(
-        session, pagination.page, pagination.per_page
-    )
-    return result
+    """Удаление пользовательской ссылки."""
+    await url_repo.delete(session_db, short_url, user_data.id)
+    await session_rd.delete(short_url)
+
+
+if __name__ == "__main__":
+    s = 12 or "A"
+    print(str(s))

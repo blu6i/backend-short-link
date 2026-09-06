@@ -7,6 +7,8 @@ requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.19.1",
     "asyncpg>=0.30.0",
+    "bcrypt>=5.0.0",
+    "email-validator>=2.3.0",
     "fastapi>=0.141.1",
     "loguru>=0.7.3",
     "pybase62>=1.0.0",
@@ -37,7 +39,8 @@ exclude = [
     "__pycache__",
     "alembic",
     "docs",
-    "migrations"
+    "migrations",
+    "tests",
 ]
 
 [tool.ruff.lint]

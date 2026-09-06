@@ -2,5 +2,6 @@
 
 from .base import Base as Base
 from .url import UrlBase as UrlBase
+from .user import UserBase as UserBase
 
-__all__ = ["Base", "UrlBase"]
+__all__ = ["Base", "UrlBase", "UserBase"]

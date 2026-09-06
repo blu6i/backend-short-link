@@ -1,7 +1,5 @@
 """Схема для ссылок."""
 
-from typing import Annotated
-
 from pydantic import BaseModel, HttpUrl, computed_field
 
 from src.core.settings import settings

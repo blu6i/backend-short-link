@@ -1,5 +1,4 @@
-from collections.abc import AsyncGenerator, Callable
-from typing import Any, cast
+from collections.abc import AsyncGenerator
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -11,7 +10,7 @@ from sqlalchemy.ext.asyncio import (
 
 from main import app
 from src.core.database import async_db
-from src.core.rd import RedisDatabase
+from src.core.rd import RedisDatabase, get_async_redis
 from src.core.settings import settings
 from src.models.base import Base
 
@@ -77,7 +76,9 @@ async def db_session() -> AsyncGenerator[AsyncSession]:
 
 
 @pytest_asyncio.fixture
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient]:
+async def client(
+    db_session: AsyncSession, fake_async_redis: RedisDatabase
+) -> AsyncGenerator[AsyncClient]:
     """
     HTTP-клиент для вызова эндпоинтов FastAPI с переопределенной сессией БД.
 
@@ -94,8 +95,9 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient]:
 
     # Подменяем зависимость БД в FastAPI
     app.dependency_overrides[async_db.get_session] = override_get_db
+    app.dependency_overrides[get_async_redis] = lambda: fake_async_redis
 
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
