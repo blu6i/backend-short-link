@@ -30,31 +30,6 @@ user_read_access = Annotated[UserReadSchem, Depends(check_token)]
 COUNT_TRY_SAVE = 5
 
 
-async def create_short_url(
-    session_db: AsyncSession,
-    session_rd: RedisDatabase,
-    original_url: str,
-    user_id: int | None = None,
-):
-    """
-    Создание и сохранение ссылок.
-
-    Args:
-        session_db (AsyncSession): Сессия ДБ
-        session_rd (RedisDatabase): Сессия редис
-        original_url (str): Оригинальная ссылка
-        user_id (int | None, optional): ИД пользователя, если создается для
-            пользователя. Defaults to None.
-
-    Raises:
-        HTTPException: _description_
-        AlreadyExistsException: _description_
-        HTTPException: _description_
-        HTTPException: _description_
-
-    """
-
-
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=UrlReadSchema)
 async def create_url(
     session: async_session_db,

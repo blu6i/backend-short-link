@@ -49,7 +49,7 @@ class UrlRepository:
         """Получение всех длинных ссылок с пагинацией."""
         offset_value = (page - 1) * per_page
 
-        stmt = select(func.count()).select_from(self.model)
+        stmt = select(func.count()).select_from(self.model).where(self.model.is_active)
         total_items = await session.scalar(stmt) or 0
 
         if total_items == 0:
