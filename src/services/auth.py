@@ -1,7 +1,9 @@
 """Модуль аунтификации и авторизации."""
 
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import Annotated
+from uuid import uuid4
 
 import bcrypt
 import jwt
@@ -10,12 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import async_db
 from src.core.exceptions import AlreadyExistsException, NotFoundException
-from src.core.rd import RedisDatabase, async_redis
+from src.core.rd import RedisDatabase, get_async_redis
 from src.core.settings import settings
 from src.repositories.user import user_repo
 from src.schemas.user import UserReadSchem
 
 async_session = Annotated[AsyncSession, Depends(async_db.get_session)]
+async_session_rd = Annotated[RedisDatabase, Depends(get_async_redis)]
+REFRESH_BLACKLIST_PREFIX = "auth:blacklist:refresh:"
 
 
 def hash_password(password: str) -> str:
@@ -92,7 +96,6 @@ async def check_token(
         UserBase: модель пользователя
 
     """
-    # TODO: добавить проверку access токена в ЧС
     if not accessToken:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -135,6 +138,7 @@ async def check_token(
 
 async def check_refresh_token(
     session: async_session,
+    session_rd: async_session_rd,
     refreshToken: str = Cookie(None),
 ) -> UserReadSchem:
     """
@@ -143,6 +147,7 @@ async def check_refresh_token(
     Args:
         session (async_session): сессия БД
         refreshToken (str, optional): access token. Defaults to Cookie(None).
+        session_rd (async_session_rd): Redis для проверки blacklist.
 
     Raises:
         HTTPException: невалидный токен
@@ -151,7 +156,6 @@ async def check_refresh_token(
         UserBase: модель пользователя
 
     """
-    # TODO: добавить проверку access токена в ЧС
     if not refreshToken:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -159,6 +163,13 @@ async def check_refresh_token(
         )
 
     payload = decode_token(refreshToken)
+
+    if await session_rd.exists(refresh_token_blacklist_key(refreshToken)):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     type_token = payload.get("type")
     if type_token != "refresh":
@@ -192,6 +203,20 @@ async def check_refresh_token(
     return user  # type: ignore
 
 
+def refresh_token_blacklist_key(token: str) -> str:
+    """Возвращает непрямой Redis-ключ для refresh-токена."""
+    token_hash = sha256(token.encode("utf-8")).hexdigest()
+    return f"{REFRESH_BLACKLIST_PREFIX}{token_hash}"
+
+
+async def revoke_refresh_token(token: str, redis: RedisDatabase) -> None:
+    """Добавляет refresh-токен в Redis blacklist до окончания его срока."""
+    payload = decode_token(token)
+    expires_at = int(payload["exp"])
+    ttl = max(1, expires_at - int(datetime.now(UTC).timestamp()))
+    await redis.set(refresh_token_blacklist_key(token), "1", ex=ttl, nx=True)
+
+
 async def check_access_user(
     session: async_session,
     accessToken: str | None = Cookie(None),
@@ -205,7 +230,8 @@ async def check_access_user(
 
     Args:
         session (async_session): сессия БД
-        accessToken (str | None, optional): access токен из куки. Defaults to Cookie(None).
+        accessToken (str | None, optional): access токен из куки.
+            Defaults to Cookie(None).
 
     Returns:
         UserReadSchem | None: _description_
@@ -231,7 +257,12 @@ def generate_token(user_id: int, life_time: int, type_token: str) -> str:
     """
     expire = datetime.now(UTC) + timedelta(seconds=life_time)
     return jwt.encode(
-        payload={"sub": str(user_id), "exp": expire, "type": type_token},
+        payload={
+            "sub": str(user_id),
+            "exp": expire,
+            "type": type_token,
+            "jti": uuid4().hex,
+        },
         key=settings.jwt.get_token,
         algorithm=settings.jwt.get_algorithm,
     )

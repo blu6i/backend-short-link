@@ -36,6 +36,7 @@ async def test_register_read_login_and_logout(
     assert "password" not in registered_user
     assert client.cookies.get("accessToken")
     assert client.cookies.get("refreshToken")
+    refresh_token = client.cookies.get("refreshToken")
 
     me_response = await client.get("/api/users/me")
     assert me_response.status_code == 200
@@ -54,6 +55,11 @@ async def test_register_read_login_and_logout(
     assert not client.cookies.get("accessToken")
     assert not client.cookies.get("refreshToken")
     assert (await client.get("/api/users/me")).status_code == 401
+
+    assert refresh_token
+    client.cookies.set("refreshToken", refresh_token)
+    assert (await client.post("/api/users/refresh_token")).status_code == 401
+    client.cookies.clear()
 
     login_response = await client.post(
         "/api/users/login",
@@ -96,6 +102,28 @@ async def test_login_validation_and_wrong_password(client: AsyncClient):
         "/api/users/login", json={"email": "invalid", "password": "short"}
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_rotation_revokes_previous_token(client: AsyncClient):
+    payload = user_payload()
+    register_response = await client.post("/api/users/register", json=payload)
+    assert register_response.status_code == 201
+    old_refresh_token = client.cookies.get("refreshToken")
+    assert old_refresh_token
+
+    response = await client.post("/api/users/refresh_token")
+
+    assert response.status_code == 200
+    new_refresh_token = client.cookies.get("refreshToken")
+    assert new_refresh_token
+    assert new_refresh_token != old_refresh_token
+
+    client.cookies.clear()
+    client.cookies.set("refreshToken", old_refresh_token)
+    response = await client.post("/api/users/refresh_token")
+
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio

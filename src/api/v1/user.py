@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import async_db
@@ -18,6 +18,7 @@ from src.services.auth import (
     generate_token,
     hash_password,
     registration_locks,
+    revoke_refresh_token,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -26,6 +27,7 @@ async_session_db = Annotated[AsyncSession, Depends(async_db.get_session)]
 user_read_access = Annotated[UserReadSchem, Depends(check_token)]
 user_read_refresh = Annotated[UserReadSchem, Depends(check_refresh_token)]
 async_session_rd = Annotated[RedisDatabase, Depends(get_async_redis)]
+refresh_cookie = Annotated[str | None, Cookie()]
 
 
 @router.post(
@@ -140,16 +142,24 @@ async def get_current_user(user_data: user_read_access):
 
 
 @router.post("/refresh_token", status_code=status.HTTP_200_OK)
-async def refresh_token(user_data: user_read_refresh, response: Response):
+async def refresh_token(
+    user_data: user_read_refresh,
+    response: Response,
+    session_rd: async_session_rd,
+    refreshToken: refresh_cookie = None,
+):
     """
     Выход пользователя.
 
     Args:
         user_data (user_read): данные авторизованного пользователя
         response (Response): Кука
+        session_rd (async_session_rd): Redis blacklist refresh-токенов
+        refreshToken (refresh_cookie): использованный refresh-токен
 
     """
-    # TODO: Добавить внесение старых токенов в ЧС
+    if refreshToken:
+        await revoke_refresh_token(refreshToken, session_rd)
     refresh_token = generate_token(user_data.id, 60 * 60 * 24 * 7, "refresh")
     access_token = generate_token(user_data.id, 60 * 5, "access")
     response.set_cookie(
@@ -173,16 +183,27 @@ async def refresh_token(user_data: user_read_refresh, response: Response):
 
 
 @router.post("/unlogin", status_code=status.HTTP_204_NO_CONTENT)
-async def unlogin_user(user_data: user_read_access, response: Response):
+async def unlogin_user(
+    user_data: user_read_access,
+    response: Response,
+    session_rd: async_session_rd,
+    refreshToken: refresh_cookie = None,
+):
     """
     Выход пользователя.
 
     Args:
         user_data (user_read): данные авторизованного пользователя
         response (Response): Кука
+        session_rd (async_session_rd): Redis blacklist refresh-токенов
+        refreshToken (refresh_cookie): текущий refresh-токен
 
     """
-    # TODO: Добавить внесение токена в ЧС
+    if refreshToken:
+        try:
+            await revoke_refresh_token(refreshToken, session_rd)
+        except HTTPException:
+            pass
     response.delete_cookie(
         key="accessToken",
         httponly=True,
