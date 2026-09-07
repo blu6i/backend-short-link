@@ -9,6 +9,7 @@
     docker run -p 8000:8000 api-secure
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -168,7 +169,9 @@ async def redirect(
     client_ip = request.headers.get("x-real-ip") or (
         request.client.host if request.client else "127.0.0.1"
     )
-    process_click_task.delay(short_url=short_url, ip=client_ip, user_agent=user_agent)
+    await asyncio.to_thread(
+        process_click_task.delay, short_url=short_url, ip=client_ip, user_agent=user_agent
+    )
     return RedirectResponse(
         str(original_url), status_code=status.HTTP_307_TEMPORARY_REDIRECT
     )
