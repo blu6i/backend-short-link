@@ -17,6 +17,7 @@ class RedisDatabase:
         db: int,
         password: str | None = None,
         prefix: str = "",
+        max_connections: int = 5000,
     ):
         """
         Инициализирует параметры подключения к Redis.
@@ -28,7 +29,7 @@ class RedisDatabase:
             password (str): пароль. default=None
             prefix (str): Префикс, добавляемый ко всем ключам.
             flag_nx (bool): Флаг для Set if Not eXists. default=False
-
+            max_connections (int): максимальное кол-во подключений
         """
         self.host = host
         self.port = port
@@ -37,8 +38,9 @@ class RedisDatabase:
         self._pool = None
         self._client = None
         self.prefix = prefix
+        self.max_connections = max_connections
 
-    async def init_pool(self, max_connections=10):
+    async def init_pool(self):
         """Initialize the connection pool."""
         if self._pool is None:
             self._pool = redis.ConnectionPool(
@@ -46,7 +48,7 @@ class RedisDatabase:
                 port=self.port,
                 password=self.password,
                 db=self.db,
-                max_connections=max_connections,
+                max_connections=self.max_connections,
                 decode_responses=True,
             )
 
@@ -146,6 +148,7 @@ async_redis = RedisDatabase(
     port=settings.redis.redis_port,
     db=settings.redis.redis_db,
     password=settings.redis.redis_password,
+    max_connections=settings.redis.max_connections,
 )
 
 

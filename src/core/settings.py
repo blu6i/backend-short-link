@@ -68,6 +68,7 @@ class RedisSettings(BaseModel):
     redis_db_broker: int = 1
     redis_db_backend: int = 2
     redis_password: str | None = None
+    max_connections: int = 3000
 
     @property
     def get_redis_url(self):
